@@ -2,8 +2,8 @@ package cmd
 
 import (
 	"fmt"
-	"io/ioutil"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 	"github.com/wardviaene/golang-for-devops-course/tls-demo/pkg/cert"
@@ -15,8 +15,29 @@ type Config struct {
 	Cert   map[string]*cert.Cert `yaml:"certs"`
 }
 
-var cfgFilePath string
-var config Config
+type CertError struct {
+	Operation string
+	Err       error
+}
+
+func (e *CertError) Error() string {
+	return fmt.Sprintf("%s failed: %v", e.Operation, e.Err)
+}
+
+type ConfigError struct {
+	Stage string
+	Path  string
+	Err   error
+}
+
+func (e *ConfigError) Error() string {
+	return fmt.Sprintf("configuration %s failed for %s: %v", e.Stage, e.Path, e.Err)
+}
+
+var (
+	cfgFilePath string
+	config      Config
+)
 
 var rootCmd = &cobra.Command{
 	Use:   "tls",
@@ -34,22 +55,78 @@ func Execute() {
 
 func init() {
 	cobra.OnInitialize(initConfig)
-
 	rootCmd.PersistentFlags().StringVarP(&cfgFilePath, "config", "c", "", "config file (default is tls.yaml)")
+}
+
+func (c *Config) validate() error {
+	if c.CACert == nil {
+		return &ConfigError{
+			Stage: "validation",
+			Path:  cfgFilePath,
+			Err:   fmt.Errorf("CA certificate configuration is missing"),
+		}
+	}
+
+	if len(c.Cert) == 0 {
+		return &ConfigError{
+			Stage: "validation",
+			Path:  cfgFilePath,
+			Err:   fmt.Errorf("no certificates configured"),
+		}
+	}
+
+	return nil
+}
+
+func loadConfigFile(path string) ([]byte, error) {
+	if !filepath.IsAbs(path) {
+		absPath, err := filepath.Abs(path)
+		if err != nil {
+			return nil, &ConfigError{
+				Stage: "path resolution",
+				Path:  path,
+				Err:   err,
+			}
+		}
+		path = absPath
+	}
+
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return nil, &ConfigError{
+			Stage: "reading",
+			Path:  path,
+			Err:   err,
+		}
+	}
+
+	return data, nil
 }
 
 func initConfig() {
 	if cfgFilePath == "" {
 		cfgFilePath = "tls.yaml"
 	}
-	cfgFileBytes, err := ioutil.ReadFile(cfgFilePath)
+
+	cfgFileBytes, err := loadConfigFile(cfgFilePath)
 	if err != nil {
-		fmt.Printf("Error while reading config file: %s\n", err)
-		return
+		fmt.Fprintf(os.Stderr, "Failed to load config: %v\n", err)
+		os.Exit(1)
 	}
-	err = yaml.Unmarshal(cfgFileBytes, &config)
-	if err != nil {
-		fmt.Printf("Error while parsing config file: %s\n", err)
-		return
+
+	if err := yaml.Unmarshal(cfgFileBytes, &config); err != nil {
+		fmt.Fprintf(os.Stderr, "Failed to parse config: %v\n",
+			&ConfigError{
+				Stage: "parsing",
+				Path:  cfgFilePath,
+				Err:   err,
+			})
+		os.Exit(1)
+	}
+
+	if err := config.validate(); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
+		os.Exit(1)
 	}
 }
+
