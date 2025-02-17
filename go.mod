@@ -1,7 +1,5 @@
 module github.com/bxtal-lsn/tls-cli
 
-replace github.com/golang/mock v1.4.3 => github.com/golang/mock v1.4.4
-
 go 1.22
 
 require (
