@@ -20,12 +20,6 @@ A command-line tool written in Go for managing TLS certificates, including creat
 ## Installation
 
 ```bash
-# Clone the repository
-git clone https://github.com/wardviaene/golang-for-devops-course
-
-# Navigate to the TLS demo directory
-cd golang-for-devops-course/tls-demo
-
 # Build the binary
 go build -o tls
 ```
