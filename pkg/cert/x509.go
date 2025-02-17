@@ -7,13 +7,19 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"io/ioutil"
+	"fmt"
+	"os"
 	"time"
 
 	"github.com/wardviaene/golang-for-devops-course/tls-demo/pkg/key"
 )
 
 func CreateCACert(ca *CACert, keyFilePath, caCertFilePath string) error {
+	// Add validation
+	if err := ca.Subject.Validate(); err != nil {
+		return fmt.Errorf("invalid CA certificate subject: %w", err)
+	}
+
 	template := &x509.Certificate{
 		SerialNumber: ca.Serial,
 		Subject: pkix.Name{
@@ -36,20 +42,25 @@ func CreateCACert(ca *CACert, keyFilePath, caCertFilePath string) error {
 
 	keyBytes, certBytes, err := createCert(template, nil, nil)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create CA certificate: %w", err)
 	}
 
-	if err := ioutil.WriteFile(keyFilePath, keyBytes, 0600); err != nil {
-		return err
+	if err := os.WriteFile(keyFilePath, keyBytes, 0o600); err != nil {
+		return fmt.Errorf("failed to write key file: %w", err)
 	}
-	if err := ioutil.WriteFile(caCertFilePath, certBytes, 0644); err != nil {
-		return err
+	if err := os.WriteFile(caCertFilePath, certBytes, 0o644); err != nil {
+		return fmt.Errorf("failed to write certificate file: %w", err)
 	}
 
 	return nil
 }
 
 func CreateCert(cert *Cert, caKey []byte, caCert []byte, keyFilePath, certFilePath string) error {
+	// Add validation
+	if err := cert.Subject.Validate(); err != nil {
+		return fmt.Errorf("invalid certificate subject: %w", err)
+	}
+
 	template := &x509.Certificate{
 		SerialNumber: cert.Serial,
 		Subject: pkix.Name{
@@ -71,23 +82,23 @@ func CreateCert(cert *Cert, caKey []byte, caCert []byte, keyFilePath, certFilePa
 
 	caKeyParsed, err := key.PrivateKeyPemToRSA(caKey)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse CA key: %w", err)
 	}
 	caCertParsed, err := PemToX509(caCert)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to parse CA certificate: %w", err)
 	}
 
 	keyBytes, certBytes, err := createCert(template, caKeyParsed, caCertParsed)
 	if err != nil {
-		return err
+		return fmt.Errorf("failed to create certificate: %w", err)
 	}
 
-	if err := ioutil.WriteFile(keyFilePath, keyBytes, 0600); err != nil {
-		return err
+	if err := os.WriteFile(keyFilePath, keyBytes, 0o600); err != nil {
+		return fmt.Errorf("failed to write key file: %w", err)
 	}
-	if err := ioutil.WriteFile(certFilePath, certBytes, 0644); err != nil {
-		return err
+	if err := os.WriteFile(certFilePath, certBytes, 0o644); err != nil {
+		return fmt.Errorf("failed to write certificate file: %w", err)
 	}
 
 	return nil
@@ -102,25 +113,26 @@ func createCert(template *x509.Certificate, caKey *rsa.PrivateKey, caCert *x509.
 
 	privateKey, err := key.CreateRSAPrivateKey(4096)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to create private key: %w", err)
 	}
+
 	if template.IsCA {
 		derBytes, err = x509.CreateCertificate(rand.Reader, template, template, &privateKey.PublicKey, privateKey)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to create CA certificate: %w", err)
 		}
 	} else {
 		derBytes, err = x509.CreateCertificate(rand.Reader, template, caCert, &privateKey.PublicKey, caKey)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, fmt.Errorf("failed to create certificate: %w", err)
 		}
 	}
 
 	if err = pem.Encode(&certOut, &pem.Block{Type: "CERTIFICATE", Bytes: derBytes}); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to PEM encode certificate: %w", err)
 	}
 	if err = pem.Encode(&keyOut, key.RSAPrivateKeyToPEM(privateKey)); err != nil {
-		return nil, nil, err
+		return nil, nil, fmt.Errorf("failed to PEM encode private key: %w", err)
 	}
 
 	return keyOut.Bytes(), certOut.Bytes(), nil
